@@ -1,0 +1,8 @@
+apiVersion: monitors.peishu.io/v1alpha1
+kind: ConfigWatch
+metadata:
+  name: configwatch-sample
+spec:
+  # Add fields here
+  configToWatch: special-config
+  configNamespace: demo

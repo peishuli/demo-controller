@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api1-deployment
+  namespace: demo
+  labels:
+    app: api1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api1
+  template:
+    metadata:
+      labels:
+        app: api1
+    spec:
+      containers:
+        - name: test-container
+          image: peishu/api1:v1
+          env:
+            # Define the environment variable
+            - name: SPECIAL_LEVEL_KEY
+              valueFrom:
+                configMapKeyRef:
+                  # The ConfigMap containing the value you want to assign to SPECIAL_LEVEL_KEY
+                  name: special-config
+                  # Specify the key associated with the value
+                  key: special.how

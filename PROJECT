@@ -1,0 +1,7 @@
+version: "2"
+domain: peishu.io
+repo: peishu/demo-controller
+resources:
+- group: monitors
+  version: v1alpha1
+  kind: ConfigWatch
