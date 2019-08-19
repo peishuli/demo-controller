@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	//"k8s.io/client-go/util/workqueue"
 )
 
 // ConfigWatchReconciler reconciles a ConfigWatch object
@@ -73,36 +74,46 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		panic(err.Error())
 	}
 
-	// // Get the configmap specified in CR
-	// configmap, err := clientset.CoreV1().ConfigMaps(cw.Spec.ConfigNamespace).Get(cw.Spec.ConfigToWatch, metav1.GetOptions{})
-	// if err != nil {
-	// 	panic(err.Error())
-	// }
-
-	// // Log the value of a particular key "special.how" in the configmap
-	// log.Info("configmap data value: " + configmap.Data["special.how"])
-
 	// (3) Find pods that use the configmap
 
 	var watchedPods []string //[]corev1.Pod
 
+	// Get all pods under the given namespace
 	podList, err := clientset.CoreV1().Pods(cw.Spec.ConfigNamespace).List(metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
 
+	var podFound bool
 	for _, pod := range podList.Items {
 		for _, container := range pod.Spec.Containers {
+			// if a pod is found, reset the found flag and move to the next pod
+			if podFound {
+				podFound = false
+				break
+			}
 			for _, env := range container.Env {
 				if env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigToWatch {
+					// structured logging with logr : https://godoc.org/github.com/go-logr/logr
 					log.Info("Find pod that uses the configmap: " + pod.Name)
+
 					watchedPods = append(watchedPods, pod.Name)
+					podFound = true // signal a pod was found and break out the inner for loop
+					break
 				}
 			}
 		}
 	}
 
 	log.Info("Totoal pods found: " + strconv.Itoa(len(watchedPods)))
+
+	// NOTE: according to "Under the hood of Kubebuilder framework" (https://itnext.io/under-the-hood-of-kubebuilder-framework-ff6b38c10796):
+	// "kubebuilder provides a generic controller that acts as a wrapper for our custom controller. It is based on the sample-controller.
+	// It defines the queue in which Objects are delivered by Informers using event handlers (not shown).
+	// The queue itself is not exposed to our custom controller." -- in other words, there is no needs to explictly use queue/handler in
+	// or code here
+	// Create a workqueue
+	//queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 
 	// (4) monitor configmap events
 	informerFactory := informers.NewSharedInformerFactory(clientset, time.Second*30)
@@ -129,9 +140,14 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 					if err != nil {
 						panic(err.Error())
 					}
-				}
-				//err = clientset.CoreV1().Pods(cw.Spec.ConfigNamespace).Delete()
 
+					// after recycled the pod, it's time to record the operation to the Events
+					cw.Status.Message = "Pod " + podName + " has been deleted and will be recreated."
+					//TODO: write to Events collection of the CR
+
+					//queue up the task -- no longer needed, see comments above.
+					//queue.Add(podName)
+				}
 			}
 		},
 	})
