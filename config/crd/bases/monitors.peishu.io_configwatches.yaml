@@ -11,6 +11,8 @@ spec:
     kind: ConfigWatch
     plural: configwatches
   scope: ""
+  subresources:
+    status: {}
   validation:
     openAPIV3Schema:
       description: ConfigWatch is the Schema for the configwatches API

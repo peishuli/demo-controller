@@ -144,7 +144,10 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 					// after recycled the pod, it's time to record the operation to the Events
 					cw.Status.Message = "Pod " + podName + " has been deleted and will be recreated."
 					//TODO: write to Events collection of the CR
-
+					err := r.Status().Update(ctx, &cw)
+					if err != nil {
+						panic(err.Error())
+					}
 					//queue up the task -- no longer needed, see comments above.
 					//queue.Add(podName)
 				}
