@@ -24,11 +24,14 @@ import (
 
 // ConfigWatchSpec defines the desired state of ConfigWatch
 type ConfigWatchSpec struct {
-	// The name of the configmap to monitor
-	ConfigToWatch string `json:"configToWatch,omitempty"`
+	// The namespace where the configmap and secrets to be watched
+	Namespace string `json:"namespace,omitempty"`
 
-	// The namespace where the configmap resides
-	ConfigNamespace string `json:"configNamespace,omitempty"`
+	// The name of the configmap to watch
+	ConfigMapToWatch string `json:"configMapToWatch,omitempty"`
+
+	// The name of the secret to watch
+	SecretToWatch string `json:"secretToWatch,omitempty"`
 }
 
 // ConfigWatchStatus defines the observed state of ConfigWatch

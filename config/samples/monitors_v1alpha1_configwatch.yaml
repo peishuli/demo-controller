@@ -3,6 +3,6 @@ kind: ConfigWatch
 metadata:
   name: configwatch-sample
 spec:
-  # Add fields here
-  configToWatch: special-config
-  configNamespace: demo
+  configMapToWatch: my-config
+  secretToWatch: my-secret
+  namespace: demo

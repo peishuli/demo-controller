@@ -76,10 +76,11 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 
 	// (3) Find pods that use the configmap
 
-	var watchedPods []string //[]corev1.Pod
+	var watchedPodsForConfigMap []string //[]corev1.Pod
+	var watchedPodsForSecret []string
 
 	// Get all pods under the given namespace
-	podList, err := clientset.CoreV1().Pods(cw.Spec.ConfigNamespace).List(metav1.ListOptions{})
+	podList, err := clientset.CoreV1().Pods(cw.Spec.Namespace).List(metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
@@ -93,11 +94,11 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 				break
 			}
 			for _, env := range container.Env {
-				if env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigToWatch {
+				if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigMapToWatch {
 					// structured logging with logr : https://godoc.org/github.com/go-logr/logr
 					log.Info("Find pod that uses the configmap: " + pod.Name)
 
-					watchedPods = append(watchedPods, pod.Name)
+					watchedPodsForConfigMap = append(watchedPodsForConfigMap, pod.Name)
 					podFound = true // signal a pod was found and break out the inner for loop
 					break
 				}
@@ -105,7 +106,31 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		}
 	}
 
-	log.Info("Totoal pods found: " + strconv.Itoa(len(watchedPods)))
+	log.Info("Totoal pods that depends on the configmap found: " + strconv.Itoa(len(watchedPodsForConfigMap)))
+
+	// Get all secrets under the given namespace - we reuse the same podList and podFound flag
+	podFound = false
+	for _, pod := range podList.Items {
+		for _, container := range pod.Spec.Containers {
+			// if a pod is found, reset the found flag and move to the next pod
+			if podFound {
+				podFound = false
+				break
+			}
+			for _, env := range container.Env {
+				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == cw.Spec.SecretToWatch {
+					// structured logging with logr : https://godoc.org/github.com/go-logr/logr
+					log.Info("Find pod that uses the secret: " + pod.Name)
+
+					watchedPodsForSecret = append(watchedPodsForSecret, pod.Name)
+					podFound = true // signal a pod was found and break out the inner for loop
+					break
+				}
+			}
+		}
+	}
+
+	log.Info("Totoal pods that depends on the secrets found: " + strconv.Itoa(len(watchedPodsForSecret)))
 
 	// NOTE: according to "Under the hood of Kubebuilder framework" (https://itnext.io/under-the-hood-of-kubebuilder-framework-ff6b38c10796):
 	// "kubebuilder provides a generic controller that acts as a wrapper for our custom controller. It is based on the sample-controller.
@@ -118,6 +143,7 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	// (4) monitor configmap events
 	informerFactory := informers.NewSharedInformerFactory(clientset, time.Second*30)
 	configmapInformer := informerFactory.Core().V1().ConfigMaps().Informer()
+	secretInformer := informerFactory.Core().V1().Secrets().Informer()
 
 	configmapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		// AddFunc: func(obj interface{}) {
@@ -135,8 +161,38 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 
 				log.Info("configmap " + newConfigmap.Name + " has been changed")
 				// delete affected pods to force recreation
-				for _, podName := range watchedPods {
-					err = clientset.CoreV1().Pods(cw.Spec.ConfigNamespace).Delete(podName, &metav1.DeleteOptions{})
+				for _, podName := range watchedPodsForConfigMap {
+					err = clientset.CoreV1().Pods(cw.Spec.Namespace).Delete(podName, &metav1.DeleteOptions{})
+					if err != nil {
+						panic(err.Error())
+					}
+
+					// after recycled the pod, it's time to record the operation to the Events
+					cw.Status.Message = "Pod " + podName + " has been deleted and will be recreated."
+					//TODO: write to Events collection of the CR
+					err := r.Status().Update(ctx, &cw)
+					if err != nil {
+						panic(err.Error())
+					}
+					//queue up the task -- no longer needed, see comments above.
+					//queue.Add(podName)
+				}
+			}
+		},
+	})
+
+	secretInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(oldObj, newObj interface{}) {
+
+			oldSecret := oldObj.(*corev1.Secret)
+			newSecret := newObj.(*corev1.Secret)
+
+			if oldSecret.ResourceVersion != newSecret.ResourceVersion && oldSecret.Name != "controller-leader-election-helper" {
+
+				log.Info("Secret " + newSecret.Name + " has been changed")
+				// delete affected pods to force recreation
+				for _, podName := range watchedPodsForSecret {
+					err = clientset.CoreV1().Pods(cw.Spec.Namespace).Delete(podName, &metav1.DeleteOptions{})
 					if err != nil {
 						panic(err.Error())
 					}
