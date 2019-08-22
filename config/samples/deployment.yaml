@@ -23,17 +23,17 @@ spec:
             - name: SPECIAL_LEVEL_KEY
               valueFrom:
                 configMapKeyRef:
-                  name: special-config
+                  name: my-config
                   key: special.how
             - name: SECRET_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: test-db-secret
+                  name: my-secret
                   key: username
             - name: SECRET_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: test-db-secret
+                  name: my-secret
                   key: password
 
             

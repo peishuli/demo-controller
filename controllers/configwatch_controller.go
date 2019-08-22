@@ -64,12 +64,16 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	}
 
 	// (2) Get the configmap being watched
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		panic(err.Error())
-	}
+	// config, err := rest.InClusterConfig()
+	// if err != nil {
+	// 	panic(err.Error())
+	// }
 
-	clientset, err := kubernetes.NewForConfig(config)
+	// clientset, err := kubernetes.NewForConfig(config)
+	// if err != nil {
+	// 	panic(err.Error())
+	// }
+	clientset, err := getClientset()
 	if err != nil {
 		panic(err.Error())
 	}
@@ -85,51 +89,9 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		panic(err.Error())
 	}
 
-	var podFound bool
-	for _, pod := range podList.Items {
-		for _, container := range pod.Spec.Containers {
-			// if a pod is found, reset the found flag and move to the next pod
-			if podFound {
-				podFound = false
-				break
-			}
-			for _, env := range container.Env {
-				if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigMapToWatch {
-					// structured logging with logr : https://godoc.org/github.com/go-logr/logr
-					log.Info("Find pod that uses the configmap: " + pod.Name)
-
-					watchedPodsForConfigMap = append(watchedPodsForConfigMap, pod.Name)
-					podFound = true // signal a pod was found and break out the inner for loop
-					break
-				}
-			}
-		}
-	}
+	watchedPodsForConfigMap, watchedPodsForSecret = getPodNameLists(podList, &cw)
 
 	log.Info("Totoal pods that depends on the configmap found: " + strconv.Itoa(len(watchedPodsForConfigMap)))
-
-	// Get all secrets under the given namespace - we reuse the same podList and podFound flag
-	podFound = false
-	for _, pod := range podList.Items {
-		for _, container := range pod.Spec.Containers {
-			// if a pod is found, reset the found flag and move to the next pod
-			if podFound {
-				podFound = false
-				break
-			}
-			for _, env := range container.Env {
-				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == cw.Spec.SecretToWatch {
-					// structured logging with logr : https://godoc.org/github.com/go-logr/logr
-					log.Info("Find pod that uses the secret: " + pod.Name)
-
-					watchedPodsForSecret = append(watchedPodsForSecret, pod.Name)
-					podFound = true // signal a pod was found and break out the inner for loop
-					break
-				}
-			}
-		}
-	}
-
 	log.Info("Totoal pods that depends on the secrets found: " + strconv.Itoa(len(watchedPodsForSecret)))
 
 	// NOTE: according to "Under the hood of Kubebuilder framework" (https://itnext.io/under-the-hood-of-kubebuilder-framework-ff6b38c10796):
@@ -176,6 +138,10 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 					}
 					//queue up the task -- no longer needed, see comments above.
 					//queue.Add(podName)
+
+					// refresh the lists and get out
+					watchedPodsForConfigMap, watchedPodsForSecret = getPodNameLists(podList, &cw)
+					return
 				}
 			}
 		},
@@ -206,6 +172,10 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 					}
 					//queue up the task -- no longer needed, see comments above.
 					//queue.Add(podName)
+
+					// refresh the lists and get out
+					watchedPodsForConfigMap, watchedPodsForSecret = getPodNameLists(podList, &cw)
+					return
 				}
 			}
 		},
@@ -228,4 +198,70 @@ func ignoreNotFound(err error) error {
 		return nil
 	}
 	return err
+}
+
+func getPodList(clientset kubernetes.Clientset, namespace string) (*corev1.PodList, error) {
+	podList, err := clientset.CoreV1().Pods(namespace).List(metav1.ListOptions{})
+	return podList, err
+}
+
+func getClientset() (*kubernetes.Clientset, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return clientset, nil
+}
+
+// a function that return two name lists, one for configmaps and another for secrets
+func getPodNameLists(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch) ([]string, []string) {
+	var podsUseConfigMap []string
+	var podsUseSecret []string
+	var podFoundForConfigMap bool
+	var podFoundForSecret bool
+	//TODO: write logic here
+	for _, pod := range podList.Items {
+		for _, container := range pod.Spec.Containers {
+			// if a pod is found, reset the found flag and move to the next pod
+			if podFoundForConfigMap {
+				podFoundForConfigMap = false
+				break
+			}
+			for _, env := range container.Env {
+				if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigMapToWatch {
+					//log.Info("Find pod that uses the configmap: " + pod.Name)
+
+					podsUseConfigMap = append(podsUseConfigMap, pod.Name)
+					podFoundForConfigMap = true // signal a pod was found and break out the inner for loop
+					break
+				}
+			}
+		}
+	}
+
+	for _, pod := range podList.Items {
+		for _, container := range pod.Spec.Containers {
+			// if a pod is found, reset the found flag and move to the next pod
+			if podFoundForSecret {
+				podFoundForSecret = false
+				break
+			}
+			for _, env := range container.Env {
+				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == cw.Spec.SecretToWatch {
+					//log.Info("Find pod that uses the secret: " + pod.Name)
+
+					podsUseSecret = append(podsUseSecret, pod.Name)
+					podFoundForSecret = true // signal a pod was found and break out the inner for loop
+					break
+				}
+			}
+		}
+	}
+	return podsUseConfigMap, podsUseSecret
 }
