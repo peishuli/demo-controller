@@ -35,5 +35,43 @@ spec:
                 secretKeyRef:
                   name: my-secret
                   key: password
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api2-deployment
+  namespace: demo
+  labels:
+    app: api2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api2
+  template:
+    metadata:
+      labels:
+        app: api2
+    spec:
+      containers:
+        - name: test-container2
+          image: peishu/api1:v1
+          env:
+            # Define the environment variable
+            - name: SPECIAL_LEVEL_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: my-config
+                  key: special.how
+            - name: SECRET_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: my-secret
+                  key: username
+            - name: SECRET_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: my-secret
+                  key: password
 
             
