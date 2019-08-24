@@ -10,7 +10,9 @@ spec:
   names:
     kind: ConfigWatch
     plural: configwatches
-  scope: ""
+    shortNames:
+    - cw
+  scope: Namespaced
   subresources:
     status: {}
   validation:
