@@ -136,7 +136,6 @@ func getPodNames(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch, watc
 	var podNames []string
 	var podFound bool = false
 
-	//TODO: write logic here
 	for _, pod := range podList.Items {
 		for _, container := range pod.Spec.Containers {
 			// if a pod is found, reset the found flag and move to the next pod
