@@ -133,6 +133,11 @@ func getPodNames(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch, watc
 	var podFound bool = false
 
 	for _, pod := range podList.Items {
+		// we only look for running pods
+		if pod.Status.Phase != "Running" {
+			continue
+		}
+
 		for _, container := range pod.Spec.Containers {
 			// if a pod is found, reset the found flag and move to the next pod
 			if podFound {
@@ -202,11 +207,15 @@ func (r *ConfigWatchReconciler) handleUpdateEvent(oldObj, newObj interface{}, cw
 }
 
 func (r *ConfigWatchReconciler) deletePods(watchedPods []string, cw *monitorsv1alpha1.ConfigWatch, clientset *kubernetes.Clientset) {
+	log := r.Log.WithValues("configwatch", "deletePods")
 	ctx := context.Background()
 	for _, podName := range watchedPods {
+
 		err := clientset.CoreV1().Pods(cw.Spec.Namespace).Delete(podName, &metav1.DeleteOptions{})
 		if err != nil {
-			panic(err.Error())
+			//panic(err.Error())
+			log.Error(err, "Operation failed in deleting pod "+podName+".")
+			return
 		}
 
 		// after recycled the pod, it's time to record the operation to the Events
