@@ -17,24 +17,20 @@ package controllers
 
 import (
 	"context"
-
-	"github.com/go-logr/logr"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	monitorsv1alpha1 "peishu/demo-controller/api/v1alpha1"
-
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/wait"
-
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	informers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ConfigWatchReconciler reconciles a ConfigWatch object
@@ -59,7 +55,6 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 
 	// Get the CR
 	var cw monitorsv1alpha1.ConfigWatch
-
 	if err := r.Get(ctx, req.NamespacedName, &cw); err != nil {
 		log.Error(err, "unable to fetch configwatch")
 		return ctrl.Result{}, ignoreNotFound(err)
@@ -109,11 +104,6 @@ func ignoreNotFound(err error) error {
 	return err
 }
 
-func getPodList(clientset kubernetes.Clientset, namespace string) (*corev1.PodList, error) {
-	podList, err := clientset.CoreV1().Pods(namespace).List(metav1.ListOptions{})
-	return podList, err
-}
-
 func getClientset() (*kubernetes.Clientset, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -126,45 +116,6 @@ func getClientset() (*kubernetes.Clientset, error) {
 	}
 
 	return clientset, nil
-}
-
-func getPodNames(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch, watchType WatchType) []string {
-	var podNames []string
-	var podFound bool = false
-
-	for _, pod := range podList.Items {
-		// we only look for running pods
-		if pod.Status.Phase != "Running" {
-			continue
-		}
-
-		for _, container := range pod.Spec.Containers {
-			// if a pod is found, reset the found flag and move to the next pod
-			if podFound {
-				podFound = false
-				break
-			}
-			for _, env := range container.Env {
-				switch watchType {
-				case WatchConfigMap:
-					if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigMapToWatch {
-						podNames = append(podNames, pod.Name)
-						podFound = true // signal a pod was found and break out the inner for loop
-						break
-					}
-				case WatchSecret:
-					if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == cw.Spec.SecretToWatch {
-						podNames = append(podNames, pod.Name)
-						podFound = true // signal a pod was found and break out the inner for loop
-						break
-					}
-				}
-
-			}
-		}
-	}
-
-	return podNames
 }
 
 func (r *ConfigWatchReconciler) handleUpdateEvent(oldObj, newObj interface{}, cw *monitorsv1alpha1.ConfigWatch, clientset *kubernetes.Clientset, watchType WatchType) {
@@ -204,6 +155,45 @@ func (r *ConfigWatchReconciler) handleUpdateEvent(oldObj, newObj interface{}, cw
 	}
 
 	r.deletePods(watchedPods, cw, clientset)
+}
+
+func getPodNames(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch, watchType WatchType) []string {
+	var podNames []string
+	var podFound bool = false
+
+	for _, pod := range podList.Items {
+		// we only look for running pods
+		if pod.Status.Phase != "Running" {
+			continue
+		}
+
+		for _, container := range pod.Spec.Containers {
+			// if a pod is found, reset the found flag and move to the next pod
+			if podFound {
+				podFound = false
+				break
+			}
+			for _, env := range container.Env {
+				switch watchType {
+				case WatchConfigMap:
+					if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigMapToWatch {
+						podNames = append(podNames, pod.Name)
+						podFound = true // signal a pod was found and break out the inner for loop
+						break
+					}
+				case WatchSecret:
+					if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == cw.Spec.SecretToWatch {
+						podNames = append(podNames, pod.Name)
+						podFound = true // signal a pod was found and break out the inner for loop
+						break
+					}
+				}
+
+			}
+		}
+	}
+
+	return podNames
 }
 
 func (r *ConfigWatchReconciler) deletePods(watchedPods []string, cw *monitorsv1alpha1.ConfigWatch, clientset *kubernetes.Clientset) {
