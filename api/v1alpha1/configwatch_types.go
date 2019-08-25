@@ -43,6 +43,7 @@ type ConfigWatchStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=cw
+// +k8s:openapi-gen=true
 
 // ConfigWatch is the Schema for the configwatches API
 type ConfigWatch struct {
