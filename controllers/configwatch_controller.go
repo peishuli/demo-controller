@@ -44,6 +44,13 @@ type ConfigWatchReconciler struct {
 	Log logr.Logger
 }
 
+type WatchType int
+
+const (
+	WatchConfigMap WatchType = 0
+	WatchSecret    WatchType = 1
+)
+
 // +kubebuilder:rbac:groups=monitors.peishu.io,resources=configwatches,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitors.peishu.io,resources=configwatches/status,verbs=get;update;patch
 
@@ -51,7 +58,7 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	ctx := context.Background()
 	log := r.Log.WithValues("configwatch", req.NamespacedName)
 
-	// (1) Get information from CR
+	// Get the CR
 	var cw monitorsv1alpha1.ConfigWatch
 
 	if err := r.Get(ctx, req.NamespacedName, &cw); err != nil {
@@ -62,129 +69,28 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, ignoreNotFound(err)
 	}
 
-	// (2) Get the clientset
+	// Get the clientset
 	clientset, err := getClientset()
 	if err != nil {
 		panic(err.Error())
 	}
 
-	// (3) Find pods that use the configmap
-
-	// var watchedPodsForConfigMap []string //[]corev1.Pod
-	// var watchedPodsForSecret []string
-
-	// Get all pods under the given namespace
-	// podList, err := clientset.CoreV1().Pods(cw.Spec.Namespace).List(metav1.ListOptions{})
-	// if err != nil {
-	// 	panic(err.Error())
-	// }
-
-	// watchedPodsForConfigMap, watchedPodsForSecret = getPodNameLists(podList, &cw)
-
-	// log.Info("Totoal pods that depends on the configmap found: " + strconv.Itoa(len(watchedPodsForConfigMap)))
-	// log.Info("Totoal pods that depends on the secrets found: " + strconv.Itoa(len(watchedPodsForSecret)))
-
-	// NOTE: according to "Under the hood of Kubebuilder framework" (https://itnext.io/under-the-hood-of-kubebuilder-framework-ff6b38c10796):
-	// "kubebuilder provides a generic controller that acts as a wrapper for our custom controller. It is based on the sample-controller.
-	// It defines the queue in which Objects are delivered by Informers using event handlers (not shown).
-	// The queue itself is not exposed to our custom controller." -- in other words, there is no needs to explictly use queue/handler in
-	// or code here
-	// Create a workqueue
-	//queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-
-	// (4) monitor configmap events
+	// Get informers
 	informerFactory := informers.NewSharedInformerFactory(clientset, time.Second*30)
 	configmapInformer := informerFactory.Core().V1().ConfigMaps().Informer()
 	secretInformer := informerFactory.Core().V1().Secrets().Informer()
 
+	// Register eventhandler to watch configmap updates
 	configmapInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		// AddFunc: func(obj interface{}) {
-		// 	log.Info("configmap added")
-		// },
-		// DeleteFunc: func(obj interface{}) {
-		// 	log.Info("configmag deleted:")
-		// },
 		UpdateFunc: func(oldObj, newObj interface{}) {
-
-			// when the event fires, refresh the list of pod names
-			podList, err := clientset.CoreV1().Pods(cw.Spec.Namespace).List(metav1.ListOptions{})
-			if err != nil {
-				panic(err.Error())
-			}
-			watchedPodsForConfigMap, _ := getPodNameLists(podList, &cw)
-			oldConfigmap := oldObj.(*corev1.ConfigMap)
-			newConfigmap := newObj.(*corev1.ConfigMap)
-
-			if oldConfigmap.ResourceVersion != newConfigmap.ResourceVersion && oldConfigmap.Name != "controller-leader-election-helper" {
-
-				log.Info("configmap " + newConfigmap.Name + " has been changed")
-				// delete affected pods to force recreation
-				for _, podName := range watchedPodsForConfigMap {
-					err = clientset.CoreV1().Pods(cw.Spec.Namespace).Delete(podName, &metav1.DeleteOptions{})
-					if err != nil {
-						panic(err.Error())
-					}
-
-					// after recycled the pod, it's time to record the operation to the Events
-					cw.Status.Message = "Pod " + podName + " has been deleted and will be recreated."
-					//TODO: write to Events collection of the CR
-					// err := r.Status().Update(ctx, &cw)
-					// if err != nil {
-					// 	panic(err.Error())
-					// }
-
-					// ignore "the object has been modified; please apply your changes to the latest version and try again" error
-					_ = r.Status().Update(ctx, &cw)
-					//queue up the task -- no longer needed, see comments above.
-					//queue.Add(podName)
-				}
-			}
+			r.handleUpdateEvent(oldObj, newObj, &cw, clientset, WatchConfigMap)
 		},
 	})
 
+	// Register eventhandler to watch secret updates
 	secretInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(oldObj, newObj interface{}) {
-
-			// when the event fires, refresh the list of pod names
-			podList, err := clientset.CoreV1().Pods(cw.Spec.Namespace).List(metav1.ListOptions{})
-			if err != nil {
-				panic(err.Error())
-			}
-			_, watchedPodsForSecret := getPodNameLists(podList, &cw)
-
-			oldSecret := oldObj.(*corev1.Secret)
-			newSecret := newObj.(*corev1.Secret)
-
-			if oldSecret.ResourceVersion != newSecret.ResourceVersion && oldSecret.Name != "controller-leader-election-helper" {
-
-				log.Info("Secret " + newSecret.Name + " has been changed")
-				// delete affected pods to force recreation
-				for _, podName := range watchedPodsForSecret {
-					// err = clientset.CoreV1().Pods(cw.Spec.Namespace).Delete(podName, &metav1.DeleteOptions{})
-					// if err != nil {
-					// 	panic(err.Error())
-					// }
-					_ = clientset.CoreV1().Pods(cw.Spec.Namespace).Delete(podName, &metav1.DeleteOptions{})
-					if err != nil {
-						panic(err.Error())
-					}
-
-					// after recycled the pod, it's time to record the operation to the Events
-					cw.Status.Message = "Pod " + podName + " has been deleted and will be recreated."
-					//TODO: write to Events collection of the CR
-					// err := r.Status().Update(ctx, &cw)
-					// if err != nil {
-					// 	panic(err.Error())
-					// }
-
-					// ignore "the object has been modified; please apply your changes to the latest version and try again" error
-					_ = r.Status().Update(ctx, &cw)
-					//queue up the task -- no longer needed, see comments above.
-					//queue.Add(podName)
-
-				}
-			}
-
+			r.handleUpdateEvent(oldObj, newObj, &cw, clientset, WatchSecret)
 		},
 	})
 
@@ -226,49 +132,91 @@ func getClientset() (*kubernetes.Clientset, error) {
 	return clientset, nil
 }
 
-// a function that return two name lists, one for configmaps and another for secrets
-func getPodNameLists(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch) ([]string, []string) {
-	var podsUseConfigMap []string
-	var podsUseSecret []string
-	var podFoundForConfigMap bool
-	var podFoundForSecret bool
+func getPodNames(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch, watchType WatchType) []string {
+	var podNames []string
+	var podFound bool = false
+
 	//TODO: write logic here
 	for _, pod := range podList.Items {
 		for _, container := range pod.Spec.Containers {
 			// if a pod is found, reset the found flag and move to the next pod
-			if podFoundForConfigMap {
-				podFoundForConfigMap = false
+			if podFound {
+				podFound = false
 				break
 			}
 			for _, env := range container.Env {
-				if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigMapToWatch {
-					//log.Info("Find pod that uses the configmap: " + pod.Name)
-
-					podsUseConfigMap = append(podsUseConfigMap, pod.Name)
-					podFoundForConfigMap = true // signal a pod was found and break out the inner for loop
-					break
+				switch watchType {
+				case WatchConfigMap:
+					if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigMapToWatch {
+						podNames = append(podNames, pod.Name)
+						podFound = true // signal a pod was found and break out the inner for loop
+						break
+					}
+				case WatchSecret:
+					if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == cw.Spec.SecretToWatch {
+						podNames = append(podNames, pod.Name)
+						podFound = true // signal a pod was found and break out the inner for loop
+						break
+					}
 				}
+
 			}
 		}
 	}
 
-	for _, pod := range podList.Items {
-		for _, container := range pod.Spec.Containers {
-			// if a pod is found, reset the found flag and move to the next pod
-			if podFoundForSecret {
-				podFoundForSecret = false
-				break
-			}
-			for _, env := range container.Env {
-				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == cw.Spec.SecretToWatch {
-					//log.Info("Find pod that uses the secret: " + pod.Name)
+	return podNames
+}
 
-					podsUseSecret = append(podsUseSecret, pod.Name)
-					podFoundForSecret = true // signal a pod was found and break out the inner for loop
-					break
-				}
-			}
+func (r *ConfigWatchReconciler) handleUpdateEvent(oldObj, newObj interface{}, cw *monitorsv1alpha1.ConfigWatch, clientset *kubernetes.Clientset, watchType WatchType) {
+	log := r.Log.WithValues("configwatch", "handelUpdatedEvent")
+	var watchedPods []string
+
+	switch watchType {
+	case WatchConfigMap:
+		oldConfigmap := oldObj.(*corev1.ConfigMap)
+		newConfigmap := newObj.(*corev1.ConfigMap)
+
+		if oldConfigmap.Name != cw.Spec.ConfigMapToWatch || oldConfigmap.Name == "controller-leader-election-helper" || oldConfigmap.ResourceVersion == newConfigmap.ResourceVersion {
+			return
 		}
+
+		log.Info("Configmap " + newConfigmap.Name + " has been changed")
+		podList, err := clientset.CoreV1().Pods(cw.Spec.Namespace).List(metav1.ListOptions{})
+		if err != nil {
+			panic(err.Error())
+		}
+		watchedPods = getPodNames(podList, cw, WatchConfigMap)
+	case WatchSecret:
+		oldSecret := oldObj.(*corev1.Secret)
+		newSecret := newObj.(*corev1.Secret)
+
+		if oldSecret.Name != cw.Spec.SecretToWatch || oldSecret.Name == "controller-leader-election-helper" || oldSecret.ResourceVersion == newSecret.ResourceVersion {
+			return
+		}
+
+		log.Info("Secret " + newSecret.Name + " has been changed")
+		podList, err := clientset.CoreV1().Pods(cw.Spec.Namespace).List(metav1.ListOptions{})
+		if err != nil {
+			panic(err.Error())
+		}
+		watchedPods = getPodNames(podList, cw, WatchSecret)
+
 	}
-	return podsUseConfigMap, podsUseSecret
+
+	r.deletePods(watchedPods, cw, clientset)
+}
+
+func (r *ConfigWatchReconciler) deletePods(watchedPods []string, cw *monitorsv1alpha1.ConfigWatch, clientset *kubernetes.Clientset) {
+	ctx := context.Background()
+	for _, podName := range watchedPods {
+		err := clientset.CoreV1().Pods(cw.Spec.Namespace).Delete(podName, &metav1.DeleteOptions{})
+		if err != nil {
+			panic(err.Error())
+		}
+
+		// after recycled the pod, it's time to record the operation to the Events
+		cw.Status.Message = "Pod " + podName + " has been deleted and will be recreated."
+		// ignore "the object has been modified; please apply your changes to the latest version and try again" error
+		_ = r.Status().Update(ctx, cw)
+	}
 }
