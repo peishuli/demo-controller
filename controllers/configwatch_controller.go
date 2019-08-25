@@ -35,7 +35,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	//"k8s.io/client-go/util/workqueue"
 )
 
 // ConfigWatchReconciler reconciles a ConfigWatch object
@@ -63,9 +62,6 @@ func (r *ConfigWatchReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 
 	if err := r.Get(ctx, req.NamespacedName, &cw); err != nil {
 		log.Error(err, "unable to fetch configwatch")
-		// we'll ignore not-found errors, since they can't be fixed by an immediate
-		// requeue (we'll need to wait for a new notification), and we can get them
-		// on deleted requests.
 		return ctrl.Result{}, ignoreNotFound(err)
 	}
 
