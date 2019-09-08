@@ -17,9 +17,7 @@ package controllers
 
 import (
 	"context"
-	monitorsv1alpha1 "peishu/demo-controller/api/v1alpha1"
-	"time"
-
+	"fmt"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
@@ -27,10 +25,17 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	informers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/reference"
+	"k8s.io/klog"
+	monitorsv1alpha1 "peishu/demo-controller/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"time"
 )
 
 // ConfigWatchReconciler reconciles a ConfigWatch object
@@ -199,6 +204,7 @@ func getPodNames(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch, watc
 func (r *ConfigWatchReconciler) deletePods(watchedPods []string, cw *monitorsv1alpha1.ConfigWatch, clientset *kubernetes.Clientset) {
 	log := r.Log.WithValues("configwatch", "deletePods")
 	ctx := context.Background()
+
 	for _, podName := range watchedPods {
 
 		err := clientset.CoreV1().Pods(cw.Spec.Namespace).Delete(podName, &metav1.DeleteOptions{})
@@ -209,8 +215,38 @@ func (r *ConfigWatchReconciler) deletePods(watchedPods []string, cw *monitorsv1a
 		}
 
 		// after recycled the pod, it's time to record the operation to the Events
-		cw.Status.Message = "Pod " + podName + " has been deleted and will be recreated."
+		cw.Status.Message = "Pod " + podName + " has been deleted and a new pod will be recreated."
+		recordEvent(r, clientset, cw, podName)
+
 		// ignore "the object has been modified; please apply your changes to the latest version and try again" error
 		_ = r.Status().Update(ctx, cw)
 	}
+}
+
+//func recordEvent(r *ConfigWatchReconciler,  namespace, podName, reason string) {
+func recordEvent(r *ConfigWatchReconciler, clientset *kubernetes.Clientset, cw *monitorsv1alpha1.ConfigWatch, podName string) {
+	log := r.Log.WithValues("configwatch", "recordEvent")
+	recorder := eventRecorder(clientset)
+
+	ref, err := reference.GetReference(scheme.Scheme, cw)
+	if err != nil {
+		log.Error(err, "Could not get the reference for configwatch ")
+		return
+	}
+
+	recorder.Event(ref, corev1.EventTypeNormal, "Depending configmap or secret was updated",
+		fmt.Sprintf("Pod %s has been deleted and a new pod will be recreated.", podName))
+}
+
+func eventRecorder(
+	kubeClient *kubernetes.Clientset) record.EventRecorder {
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(klog.Infof)
+	eventBroadcaster.StartRecordingToSink(
+		&typedcorev1.EventSinkImpl{
+			Interface: kubeClient.CoreV1().Events("")})
+	recorder := eventBroadcaster.NewRecorder(
+		scheme.Scheme,
+		corev1.EventSource{Component: "configwatch"})
+	return recorder
 }
