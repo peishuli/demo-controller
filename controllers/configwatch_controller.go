@@ -132,7 +132,7 @@ func (r *ConfigWatchReconciler) handleUpdateEvent(oldObj, newObj interface{}, cw
 		oldConfigmap := oldObj.(*corev1.ConfigMap)
 		newConfigmap := newObj.(*corev1.ConfigMap)
 
-		if oldConfigmap.Name != cw.Spec.ConfigMapToWatch || oldConfigmap.Name == "controller-leader-election-helper" || oldConfigmap.ResourceVersion == newConfigmap.ResourceVersion {
+		if !contains(cw.Spec.ConfigMaps, oldConfigmap.Name) || oldConfigmap.Name == "controller-leader-election-helper" || oldConfigmap.ResourceVersion == newConfigmap.ResourceVersion {
 			return
 		}
 
@@ -146,7 +146,7 @@ func (r *ConfigWatchReconciler) handleUpdateEvent(oldObj, newObj interface{}, cw
 		oldSecret := oldObj.(*corev1.Secret)
 		newSecret := newObj.(*corev1.Secret)
 
-		if oldSecret.Name != cw.Spec.SecretToWatch || oldSecret.Name == "controller-leader-election-helper" || oldSecret.ResourceVersion == newSecret.ResourceVersion {
+		if !contains(cw.Spec.Secrets, oldSecret.Name) || oldSecret.Name == "controller-leader-election-helper" || oldSecret.ResourceVersion == newSecret.ResourceVersion {
 			return
 		}
 
@@ -164,7 +164,7 @@ func (r *ConfigWatchReconciler) handleUpdateEvent(oldObj, newObj interface{}, cw
 
 func getPodNames(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch, watchType WatchType) []string {
 	var podNames []string
-	var podFound bool = false
+	// var podFound bool = false
 
 	for _, pod := range podList.Items {
 		// we only look for running pods
@@ -173,27 +173,17 @@ func getPodNames(podList *corev1.PodList, cw *monitorsv1alpha1.ConfigWatch, watc
 		}
 
 		for _, container := range pod.Spec.Containers {
-			// if a pod is found, reset the found flag and move to the next pod
-			if podFound {
-				podFound = false
-				break
-			}
 			for _, env := range container.Env {
 				switch watchType {
 				case WatchConfigMap:
-					if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == cw.Spec.ConfigMapToWatch {
+					if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil && contains(cw.Spec.ConfigMaps, env.ValueFrom.ConfigMapKeyRef.Name) && !contains(podNames, pod.Name) {
 						podNames = append(podNames, pod.Name)
-						podFound = true // signal a pod was found and break out the inner for loop
-						break
 					}
 				case WatchSecret:
-					if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == cw.Spec.SecretToWatch {
+					if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && contains(cw.Spec.Secrets, env.ValueFrom.SecretKeyRef.Name) && !contains(podNames, pod.Name) {
 						podNames = append(podNames, pod.Name)
-						podFound = true // signal a pod was found and break out the inner for loop
-						break
 					}
 				}
-
 			}
 		}
 	}
@@ -249,4 +239,13 @@ func eventRecorder(
 		scheme.Scheme,
 		corev1.EventSource{Component: "configwatch"})
 	return recorder
+}
+
+func contains(arr []string, str string) bool {
+	for _, a := range arr {
+		if a == str {
+			return true
+		}
+	}
+	return false
 }

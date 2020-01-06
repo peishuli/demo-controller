@@ -34,15 +34,19 @@ spec:
         spec:
           description: ConfigWatchSpec defines the desired state of ConfigWatch
           properties:
-            configMapToWatch:
-              description: The name of the configmap to watch
-              type: string
+            configMaps:
+              description: config maps to watch
+              items:
+                type: string
+              type: array
             namespace:
               description: The namespace where the configmap and secrets to be watched
               type: string
-            secretToWatch:
-              description: The name of the secret to watch
-              type: string
+            secrets:
+              description: secrets to watch
+              items:
+                type: string
+              type: array
           type: object
         status:
           description: ConfigWatchStatus defines the observed state of ConfigWatch

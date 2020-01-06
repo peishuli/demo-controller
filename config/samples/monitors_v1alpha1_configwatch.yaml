@@ -3,6 +3,8 @@ kind: ConfigWatch
 metadata:
   name: configwatch-sample
 spec:
-  configMapToWatch: my-config
-  secretToWatch: my-secret
   namespace: demo
+  configMaps:
+    - my-config
+  secrets:
+    - my-secret

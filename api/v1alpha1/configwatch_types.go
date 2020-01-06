@@ -19,19 +19,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ConfigWatchSpec defines the desired state of ConfigWatch
 type ConfigWatchSpec struct {
 	// The namespace where the configmap and secrets to be watched
 	Namespace string `json:"namespace,omitempty"`
 
-	// The name of the configmap to watch
-	ConfigMapToWatch string `json:"configMapToWatch,omitempty"`
+	// config maps to watch
+	ConfigMaps []string `json:"configMaps,omitempty"`
 
-	// The name of the secret to watch
-	SecretToWatch string `json:"secretToWatch,omitempty"`
+	// secrets to watch
+	Secrets []string `json:"secrets,omitempty"`
 }
 
 // ConfigWatchStatus defines the observed state of ConfigWatch
