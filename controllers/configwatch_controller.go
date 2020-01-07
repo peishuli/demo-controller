@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-logr/logr"
+	monitorsv1alpha1 "github.com/peishuli/demo-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,16 +33,17 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog"
-	monitorsv1alpha1 "github.com/peishuli/demo-controller/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"time"
 )
 
 // ConfigWatchReconciler reconciles a ConfigWatch object
 type ConfigWatchReconciler struct {
 	client.Client
-	Log logr.Logger
+	Log     logr.Logger
+	Manager manager.Manager
 }
 
 type WatchType int
@@ -213,12 +215,11 @@ func (r *ConfigWatchReconciler) deletePods(watchedPods []string, cw *monitorsv1a
 	}
 }
 
-//func recordEvent(r *ConfigWatchReconciler,  namespace, podName, reason string) {
 func recordEvent(r *ConfigWatchReconciler, clientset *kubernetes.Clientset, cw *monitorsv1alpha1.ConfigWatch, podName string) {
 	log := r.Log.WithValues("configwatch", "recordEvent")
 	recorder := eventRecorder(clientset)
 
-	ref, err := reference.GetReference(scheme.Scheme, cw)
+	ref, err := reference.GetReference(r.Manager.GetScheme(), cw)
 	if err != nil {
 		log.Error(err, "Could not get the reference for configwatch ")
 		return

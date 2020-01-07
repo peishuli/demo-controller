@@ -64,8 +64,9 @@ func main() {
 	}
 
 	if err = (&controllers.ConfigWatchReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("ConfigWatch"),
+		Client:  mgr.GetClient(),
+		Log:     ctrl.Log.WithName("controllers").WithName("ConfigWatch"),
+		Manager: mgr,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ConfigWatch")
 		os.Exit(1)

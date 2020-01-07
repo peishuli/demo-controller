@@ -54,7 +54,7 @@ func (in *ConfigWatch) DeepCopyObject() runtime.Object {
 func (in *ConfigWatchList) DeepCopyInto(out *ConfigWatchList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]ConfigWatch, len(*in))
