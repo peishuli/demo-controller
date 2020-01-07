@@ -1,6 +1,6 @@
 version: "2"
 domain: peishu.io
-repo: peishu/demo-controller
+repo: github.com/peishuli/demo-controller
 resources:
 - group: monitors
   version: v1alpha1

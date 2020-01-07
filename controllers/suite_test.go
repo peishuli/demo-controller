@@ -22,7 +22,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	monitorsv1alpha1 "peishu/demo-controller/api/v1alpha1"
+	monitorsv1alpha1 "github.com/peishuli/demo-controller/api/v1alpha1"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"

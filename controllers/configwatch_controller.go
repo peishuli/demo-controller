@@ -32,7 +32,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog"
-	monitorsv1alpha1 "peishu/demo-controller/api/v1alpha1"
+	monitorsv1alpha1 "github.com/peishuli/demo-controller/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"time"

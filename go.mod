@@ -1,4 +1,4 @@
-module peishu/demo-controller
+module github.com/peishuli/demo-controller
 
 go 1.12
 
